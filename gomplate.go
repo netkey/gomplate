@@ -5,6 +5,7 @@ package gomplate
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -206,4 +207,35 @@ func mappingNamer(outMap string, g *gomplate) func(string) (string, error) {
 
 		return filepath.Clean(strings.TrimSpace(out.String())), nil
 	}
+}
+
+// RenderTemplate renders a template to the output writer. Data sources and other
+// options can be set through 'opts' parameter.
+func RenderTemplate(in io.Reader, out io.Writer, opts *Options) error {
+	if opts == nil {
+		opts = &Options{}
+	}
+
+	d, err := data.NewData(nil, nil)
+	if err != nil {
+		return err
+	}
+	addCleanupHook(d.Cleanup)
+	defer runCleanupHooks()
+
+	i, err := ioutil.ReadAll(in)
+	if err != nil {
+		return err
+	}
+	g := newGomplate(d, opts.LDelim, opts.RDelim, nil, nil)
+
+	t := &tplate{
+		contents: string(i),
+		target:   out,
+	}
+	err = g.runTemplate(t)
+	if err != nil {
+		return err
+	}
+	return nil
 }

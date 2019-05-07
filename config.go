@@ -124,3 +124,21 @@ func (o *Config) String() string {
 	}
 	return c
 }
+
+// Options for controlling how templates are rendered.
+type Options struct {
+	LDelim string
+	RDelim string
+}
+
+// nolint: gocyclo
+func (o *Options) String() string {
+	out := ""
+	if o.LDelim != "{{" {
+		out += "\nleft_delim: " + o.LDelim
+	}
+	if o.RDelim != "}}" {
+		out += "\nright_delim: " + o.RDelim
+	}
+	return out
+}
