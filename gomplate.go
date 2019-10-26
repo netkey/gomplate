@@ -227,7 +227,8 @@ func RenderTemplate(in io.Reader, out io.Writer, opts *Options) error {
 	if err != nil {
 		return err
 	}
-	g := newGomplate(d, opts.LDelim, opts.RDelim, nil, nil)
+	funcMap := Funcs(d)
+	g := newGomplate(funcMap, opts.LDelim, opts.RDelim, nil, nil)
 
 	t := &tplate{
 		contents: string(i),

@@ -3,8 +3,6 @@ package gomplate
 import (
 	"bytes"
 	"fmt"
-
-	"github.com/hairyhenderson/gomplate/data"
 )
 
 // Demonstrates how to render a simple template which uses gomplate functions but no datasources.
@@ -53,9 +51,9 @@ func ExampleRenderTemplate_datasources() {
 {{ . }}
 {{ end }}`
 
-	myData := &data.Source{
-		Alias: "myData",
-	}
+	// myData := &data.Source{
+	// 	Alias: "myData",
+	// }
 
 	in := bytes.NewBufferString(inString)
 	out := &bytes.Buffer{}
