@@ -15,16 +15,19 @@ import (
 	"github.com/hairyhenderson/gomplate/v3/env"
 	"github.com/hairyhenderson/gomplate/v3/version"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
-	printVer bool
-	verbose  bool
-	execPipe bool
-	opts     gomplate.Config
-	includes []string
-
+	cfgFile      string
+	conf         gconfig
+	printVer     bool
 	postRunInput *bytes.Buffer
+)
+
+const (
+	defaultConfigName = ".gomplate"
+	defaultConfigFile = ".gomplate.yaml"
 )
 
 func printVersion(name string) {
@@ -38,7 +41,7 @@ func postRunExec(cmd *cobra.Command, args []string) error {
 		args = args[1:]
 		// nolint: gosec
 		c := exec.Command(name, args...)
-		if execPipe {
+		if conf.ExecPipe {
 			c.Stdin = postRunInput
 		} else {
 			c.Stdin = os.Stdin
@@ -91,32 +94,39 @@ func processIncludes(includes, excludes []string) []string {
 
 func newGomplateCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:     "gomplate",
-		Short:   "Process text files with Go templates",
+		Use:   "gomplate",
+		Short: "Process text files with Go templates",
+		// TODO: cmd.SetVersionTemplate(s string)
+		// Version: version.Version,
 		PreRunE: validateOpts,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// fmt.Fprintf(os.Stderr, "viper settings: %#v\nds: %#v\n", viper.AllSettings(), viper.GetStringSlice("datasource"))
+			conf := gconfig{}
+			if err := viper.Unmarshal(&conf); err != nil {
+				return fmt.Errorf("unmarshaling error on %#v: %w", conf, err)
+			}
 			if printVer {
 				printVersion(cmd.Name())
 				return nil
 			}
-			if verbose {
+			if conf.Verbose {
 				// nolint: errcheck
 				fmt.Fprintf(os.Stderr, "%s version %s, build %s\nconfig is:\n%s\n\n",
 					cmd.Name(), version.Version, version.GitCommit,
-					&opts)
+					conf)
 			}
 
 			// support --include
-			opts.ExcludeGlob = processIncludes(includes, opts.ExcludeGlob)
+			conf.ExcludeGlob = processIncludes(conf.Includes, conf.ExcludeGlob)
 
-			if execPipe {
+			if conf.ExecPipe {
 				postRunInput = &bytes.Buffer{}
-				opts.Out = postRunInput
+				conf.out = postRunInput
 			}
-			err := gomplate.RunTemplates(&opts)
+			err := gomplate.RunTemplates(conf.toConfig())
 			cmd.SilenceErrors = true
 			cmd.SilenceUsage = true
-			if verbose {
+			if conf.Verbose {
 				// nolint: errcheck
 				fmt.Fprintf(os.Stderr, "rendered %d template(s) with %d error(s) in %v\n",
 					gomplate.Metrics.TemplatesProcessed, gomplate.Metrics.Errors, gomplate.Metrics.TotalRenderDuration)
@@ -130,38 +140,64 @@ func newGomplateCmd() *cobra.Command {
 }
 
 func initFlags(command *cobra.Command) {
+	cobra.OnInitialize(initConfig)
+
 	command.Flags().SortFlags = false
 
-	command.Flags().StringArrayVarP(&opts.DataSources, "datasource", "d", nil, "`datasource` in alias=URL form. Specify multiple times to add multiple sources.")
-	command.Flags().StringArrayVarP(&opts.DataSourceHeaders, "datasource-header", "H", nil, "HTTP `header` field in 'alias=Name: value' form to be provided on HTTP-based data sources. Multiples can be set.")
+	command.Flags().StringSliceVarP(&conf.DataSources, "datasource", "d", nil, "`datasource` in alias=URL form. Specify multiple times to add multiple sources.")
+	command.Flags().StringSliceVarP(&conf.DataSourceHeaders, "datasource-header", "H", nil, "HTTP `header` field in 'alias=Name: value' form to be provided on HTTP-based data sources. Multiples can be set.")
 
-	command.Flags().StringArrayVarP(&opts.Contexts, "context", "c", nil, "pre-load a `datasource` into the context, in alias=URL form. Use the special alias `.` to set the root context.")
+	command.Flags().StringSliceVarP(&conf.Contexts, "context", "c", nil, "pre-load a `datasource` into the context, in alias=URL form. Use the special alias `.` to set the root context.")
 
-	command.Flags().StringArrayVar(&opts.Plugins, "plugin", nil, "plug in an external command as a function in name=path form. Can be specified multiple times")
+	command.Flags().StringSliceVar(&conf.Plugins, "plugin", nil, "plug in an external command as a function in name=path form. Can be specified multiple times")
 
-	command.Flags().StringArrayVarP(&opts.InputFiles, "file", "f", []string{"-"}, "Template `file` to process. Omit to use standard input, or use --in or --input-dir")
-	command.Flags().StringVarP(&opts.Input, "in", "i", "", "Template `string` to process (alternative to --file and --input-dir)")
-	command.Flags().StringVar(&opts.InputDir, "input-dir", "", "`directory` which is examined recursively for templates (alternative to --file and --in)")
+	command.Flags().StringSliceVarP(&conf.InputFiles, "file", "f", []string{"-"}, "Template `file` to process. Omit to use standard input, or use --in or --input-dir")
+	command.Flags().StringVarP(&conf.Input, "in", "i", "", "Template `string` to process (alternative to --file and --input-dir)")
+	command.Flags().StringVar(&conf.InputDir, "input-dir", "", "`directory` which is examined recursively for templates (alternative to --file and --in)")
 
-	command.Flags().StringArrayVar(&opts.ExcludeGlob, "exclude", []string{}, "glob of files to not parse")
-	command.Flags().StringArrayVar(&includes, "include", []string{}, "glob of files to parse")
+	command.Flags().StringSliceVar(&conf.ExcludeGlob, "exclude", []string{}, "glob of files to not parse")
+	command.Flags().StringSliceVar(&conf.Includes, "include", []string{}, "glob of files to parse")
 
-	command.Flags().StringArrayVarP(&opts.OutputFiles, "out", "o", []string{"-"}, "output `file` name. Omit to use standard output.")
-	command.Flags().StringArrayVarP(&opts.Templates, "template", "t", []string{}, "Additional template file(s)")
-	command.Flags().StringVar(&opts.OutputDir, "output-dir", ".", "`directory` to store the processed templates. Only used for --input-dir")
-	command.Flags().StringVar(&opts.OutputMap, "output-map", "", "Template `string` to map the input file to an output path")
-	command.Flags().StringVar(&opts.OutMode, "chmod", "", "set the mode for output file(s). Omit to inherit from input file(s)")
+	command.Flags().StringSliceVarP(&conf.OutputFiles, "out", "o", []string{"-"}, "output `file` name. Omit to use standard output.")
+	command.Flags().StringSliceVarP(&conf.Templates, "template", "t", []string{}, "Additional template file(s)")
+	command.Flags().StringVar(&conf.OutputDir, "output-dir", ".", "`directory` to store the processed templates. Only used for --input-dir")
+	command.Flags().StringVar(&conf.OutputMap, "output-map", "", "Template `string` to map the input file to an output path")
+	command.Flags().StringVar(&conf.OutMode, "chmod", "", "set the mode for output file(s). Omit to inherit from input file(s)")
 
-	command.Flags().BoolVar(&execPipe, "exec-pipe", false, "pipe the output to the post-run exec command")
+	command.Flags().BoolVar(&conf.ExecPipe, "exec-pipe", false, "pipe the output to the post-run exec command")
 
 	ldDefault := env.Getenv("GOMPLATE_LEFT_DELIM", "{{")
 	rdDefault := env.Getenv("GOMPLATE_RIGHT_DELIM", "}}")
-	command.Flags().StringVar(&opts.LDelim, "left-delim", ldDefault, "override the default left-`delimiter` [$GOMPLATE_LEFT_DELIM]")
-	command.Flags().StringVar(&opts.RDelim, "right-delim", rdDefault, "override the default right-`delimiter` [$GOMPLATE_RIGHT_DELIM]")
+	command.Flags().StringVar(&conf.LDelim, "left-delim", ldDefault, "override the default left-`delimiter` [$GOMPLATE_LEFT_DELIM]")
+	command.Flags().StringVar(&conf.RDelim, "right-delim", rdDefault, "override the default right-`delimiter` [$GOMPLATE_RIGHT_DELIM]")
 
-	command.Flags().BoolVarP(&verbose, "verbose", "V", false, "output extra information about what gomplate is doing")
+	command.Flags().BoolVarP(&conf.Verbose, "verbose", "V", false, "output extra information about what gomplate is doing")
 
 	command.Flags().BoolVarP(&printVer, "version", "v", false, "print the version")
+
+	command.Flags().StringVar(&cfgFile, "config", defaultConfigFile, "config file (overridden by commandline flags)")
+
+	viper.BindPFlags(command.Flags())
+}
+
+func initConfig() {
+	configRequired := false
+	if cfgFile != defaultConfigFile {
+		// Use config file from the flag.
+		viper.SetConfigFile(cfgFile)
+		configRequired = true
+	} else {
+		viper.AddConfigPath(".")
+		viper.SetConfigName(defaultConfigName)
+	}
+
+	err := viper.ReadInConfig()
+	if err != nil && configRequired {
+		panic(err)
+	}
+	if err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	}
 }
 
 func main() {

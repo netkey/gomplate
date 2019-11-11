@@ -43,8 +43,8 @@ func validateOpts(cmd *cobra.Command, args []string) (err error) {
 		err = notTogether(cmd, "out", "output-dir", "output-map", "exec-pipe")
 	}
 
-	if err == nil && len(opts.InputFiles) != len(opts.OutputFiles) {
-		err = fmt.Errorf("must provide same number of --out (%d) as --file (%d) options", len(opts.OutputFiles), len(opts.InputFiles))
+	if err == nil && len(conf.InputFiles) != len(conf.OutputFiles) {
+		err = fmt.Errorf("must provide same number of --out (%d) as --file (%d) options", len(conf.OutputFiles), len(conf.InputFiles))
 	}
 
 	if err == nil && cmd.Flag("exec-pipe").Changed && len(args) == 0 {
