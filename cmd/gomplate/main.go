@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	printVer bool
 	verbose  bool
 	execPipe bool
 	opts     gomplate.Config
@@ -26,10 +25,6 @@ var (
 
 	postRunInput *bytes.Buffer
 )
-
-func printVersion(name string) {
-	fmt.Printf("%s version %s\n", name, version.Version)
-}
 
 // postRunExec - if templating succeeds, the command following a '--' will be executed
 func postRunExec(cmd *cobra.Command, args []string) error {
@@ -94,11 +89,8 @@ func newGomplateCmd() *cobra.Command {
 		Use:     "gomplate",
 		Short:   "Process text files with Go templates",
 		PreRunE: validateOpts,
+		Version: version.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if printVer {
-				printVersion(cmd.Name())
-				return nil
-			}
 			if verbose {
 				// nolint: errcheck
 				fmt.Fprintf(os.Stderr, "%s version %s, build %s\nconfig is:\n%s\n\n",
@@ -160,8 +152,6 @@ func initFlags(command *cobra.Command) {
 	command.Flags().StringVar(&opts.RDelim, "right-delim", rdDefault, "override the default right-`delimiter` [$GOMPLATE_RIGHT_DELIM]")
 
 	command.Flags().BoolVarP(&verbose, "verbose", "V", false, "output extra information about what gomplate is doing")
-
-	command.Flags().BoolVarP(&printVer, "version", "v", false, "print the version")
 }
 
 func main() {
